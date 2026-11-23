@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>年月別 工数・ST達成率</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f6f4;
+  --surface-1: #fcfcfb;
+  --border: #e3e2de;
+  --grid: #ecebe7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #7a7974;
+  --accent: #2a78d6;
+  --series-1: #2a78d6;   /* 合計工数(実績) */
+  --series-2: #eb6834;   /* 合計ST */
+  --ref: #7a7974;
+  --warn-bg: #fff6e0;
+  --warn-text: #7a5300;
+  --err-bg: #fdecec;
+  --err-text: #9b1c1c;
+  /* 機種（シート）の色：固定順 */
+  --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100;
+  --c5: #e87ba4; --c6: #008300; --c7: #6250d6; --c8: #e34948;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211;
+    --surface-1: #1a1a19;
+    --border: #2f2f2d;
+    --grid: #262624;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8f8e86;
+    --accent: #3987e5;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --ref: #8f8e86;
+    --warn-bg: #3a2e10;
+    --warn-text: #f3d48a;
+    --err-bg: #3d1a1a;
+    --err-text: #f3a5a5;
+    --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500;
+    --c5: #d55181; --c6: #0ca30c; --c7: #9085e9; --c8: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface-1: #1a1a19; --border: #2f2f2d; --grid: #262624;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --accent: #3987e5; --series-1: #3987e5; --series-2: #d95926; --ref: #8f8e86;
+  --warn-bg: #3a2e10; --warn-text: #f3d48a; --err-bg: #3d1a1a; --err-text: #f3a5a5;
+  --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500;
+  --c5: #d55181; --c6: #0ca30c; --c7: #9085e9; --c8: #e66767;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text-primary);
+  font-family: "Yu Gothic UI", "Meiryo", "Hiragino Sans", system-ui, sans-serif;
+  font-size: 14px; line-height: 1.6;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+.sub { color: var(--text-secondary); margin: 0 0 20px; font-size: 13px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.drop {
+  border: 2px dashed var(--border); border-radius: 10px; padding: 28px 16px; text-align: center;
+  color: var(--text-secondary); cursor: pointer; transition: border-color .15s, background .15s;
+}
+.drop:hover, .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.drop strong { color: var(--text-primary); }
+.drop.disabled { opacity: .55; cursor: not-allowed; }
+.drop.disabled:hover { border-color: var(--border); background: transparent; }
+.drop .lock { margin-top: 8px; font-size: 12px; color: var(--warn-text); }
+.drop:not(.disabled) .lock { display: none; }
+.step { font-weight: 600; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+.step .num { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; }
+.hint { font-size: 12px; color: var(--text-muted); }
+input[type="month"] { font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); }
+.files { margin-top: 8px; font-size: 12px; color: var(--text-muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; }
+.controls label { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+select, button {
+  font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+}
+button { cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 6px 12px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.controls label.chk { cursor: pointer; }
+.controls label.chk input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+.controls label.chk:has(input:disabled) { opacity: .5; cursor: default; }
+.spacer { flex: 1; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.kpi .k { font-size: 12px; color: var(--text-secondary); }
+.kpi .v { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kpi .u { font-size: 13px; color: var(--text-muted); margin-left: 2px; font-weight: 400; }
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
+.charts .card { margin: 0; position: relative; }
+.ctitle { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
+.cnote { font-size: 12px; color: var(--text-muted); margin: 0 0 8px; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+svg text { fill: var(--text-muted); font-size: 11px; font-family: inherit; }
+svg .val { fill: var(--text-secondary); font-size: 11px; }
+.tip {
+  position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12);
+  white-space: nowrap; display: none; z-index: 5;
+}
+.tip b { display: block; margin-bottom: 2px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { padding: 7px 10px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; background: var(--surface-1); position: sticky; top: 0; }
+th:first-child, td:first-child { text-align: left; }
+tfoot td { font-weight: 600; border-top: 2px solid var(--border); border-bottom: 0; }
+th.grp { text-align: center; border-bottom: 1px solid var(--border); }
+.muted { color: var(--text-muted); }
+.rate-hi { font-weight: 600; }
+.msg { border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 16px; }
+.msg.warn { background: var(--warn-bg); color: var(--warn-text); }
+.msg.err { background: var(--err-bg); color: var(--err-text); }
+.hidden { display: none !important; }
+#allReport { margin-top: 28px; }
+.charts .card.wide { grid-column: 1 / -1; }
+.rtitle { font-size: 17px; font-weight: 700; margin: 0 0 2px; }
+.legend { flex-wrap: wrap; }
+.tip .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+.alltbl { margin-bottom: 4px; }
+.alltbl .gs { border-left: 1px solid var(--border); }
+.alltbl th.grp { text-align: center; }
+.alltbl tfoot td { font-weight: 600; }
+.tnote { margin: 6px 0 0; }
+
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
+  /* 印刷は常にライトの配色 */
+  html:root:not([data-theme="_"]) {
+    color-scheme: light;
+    --bg: #fff; --surface-1: #fff; --border: #cfcfca; --grid: #e6e5e1;
+    --text-primary: #000; --text-secondary: #3d3d3a; --text-muted: #5f5e5a; --ref: #5f5e5a;
+    --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100;
+    --c5: #e87ba4; --c6: #008300; --c7: #6250d6; --c8: #e34948;
+    --series-1: #2a78d6; --series-2: #eb6834;
+  }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { background: #fff; font-size: 10px; }
+  .wrap { max-width: none; padding: 0; }
+  .wrap > *:not(#result), #result > *:not(#allReport), .noprint, .tip { display: none !important; }
+  /* A4横1ページ：見出し＋グラフ＋集計表 */
+  #allReport { margin: 0; break-inside: avoid; }
+  .card { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; margin-bottom: 6px; box-shadow: none; }
+  .rtitle { font-size: 14px; }
+  .cnote { margin-bottom: 2px; }
+  .legend { margin-bottom: 0; }
+  .charts { display: block; margin-bottom: 6px; }
+  #allCharts svg { height: 56mm; width: 100%; display: block; }
+  .tablewrap { overflow: visible; }
+  .alltbl { font-size: 9.5px; line-height: 1.25; }
+  .alltbl th, .alltbl td { padding: 1.5px 5px; }
+  #allTables .ctitle { margin-bottom: 2px; }
+  #allReport.dense .alltbl { font-size: 8px; line-height: 1.15; }
+  #allReport.dense .alltbl th, #allReport.dense .alltbl td { padding: 1px 3px; }
+  #allReport.dense #allCharts svg { height: 48mm; }
+  th { position: static; }
+}
+
+details { font-size: 12px; color: var(--text-secondary); }
+details summary { cursor: pointer; }
+details ul { margin: 6px 0 0; padding-left: 20px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>年月別 合計工数・ST達成率</h1>
+  <p class="sub">集計したい年月を入力してから検査工数記録のExcel（ARCシート形式）を読み込むと、検査完了日の年月ごとに合計工数とST達成率を集計します。ファイルはブラウザ内だけで処理され、外部には送信されません。</p>
+
+  <div class="card">
+    <p class="step"><span class="num">1</span>集計したい年月を入力（検査完了日で絞り込み）</p>
+    <div class="controls">
+      <label>開始 <input type="month" id="from" required></label>
+      <span class="muted">〜</span>
+      <label>終了 <input type="month" id="to"></label>
+      <span class="hint">終了を空欄にすると開始の1か月だけを集計します。</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="step"><span class="num">2</span>Excelファイルを読み込む</p>
+    <div id="drop" class="drop disabled" tabindex="0" role="button" aria-disabled="true" aria-label="Excelファイルを選択">
+      <strong>Excelファイルをここにドラッグ＆ドロップ</strong><br>
+      またはクリックして選択（.xlsx / .xlsm、複数可）
+      <div class="lock" id="lock">先に「1」で集計したい年月を入力してください</div>
+      <input id="file" type="file" accept=".xlsx,.xlsm,.xls" multiple hidden>
+    </div>
+    <div id="files" class="files"></div>
+  </div>
+
+  <div id="msgs"></div>
+
+  <div id="result" class="hidden">
+    <div class="card">
+      <div class="controls">
+        <label>工数の算出
+          <span class="seg" id="source">
+            <button type="button" data-v="calc" aria-pressed="true">内訳から再計算</button>
+            <button type="button" data-v="sheet" aria-pressed="false">シートの合計列</button>
+          </span>
+        </label>
+        <label class="chk"><input type="checkbox" id="incExtra"> 製造応援・ロス工数を合計工数に含める</label>
+        <label>機種（シート） <select id="sheet"></select></label>
+        <span class="spacer"></span>
+        <button type="button" id="csv" class="primary">CSVで保存</button>
+      </div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="charts">
+      <div class="card">
+        <p class="ctitle">月別 合計工数とST</p>
+        <p class="cnote">単位：時間（h）</p>
+        <div class="legend"><span><i style="background:var(--series-1)"></i>合計工数（実績）</span><span><i style="background:var(--series-2)"></i>合計ST</span></div>
+        <div id="chart1"></div>
+        <div class="tip" id="tip1"></div>
+      </div>
+      <div class="card">
+        <p class="ctitle">月別 ST達成率</p>
+        <p class="cnote">合計ST ÷ 合計工数　（破線＝100%）</p>
+        <div id="chart2"></div>
+        <div class="tip" id="tip2"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tablewrap">
+        <table id="tbl"></table>
+      </div>
+    </div>
+
+    <section id="allReport">
+      <div class="card report-head">
+        <div class="controls">
+          <div>
+            <p class="rtitle">全機種 年月別 合計工数・ST達成率</p>
+            <p class="cnote" id="allMeta"></p>
+          </div>
+          <span class="spacer"></span>
+          <button type="button" id="printAll" class="primary noprint">全機種レポートを印刷</button>
+        </div>
+      </div>
+      <div class="charts" id="allCharts"></div>
+      <div class="card" id="allTables"></div>
+    </section>
+
+    <div class="card">
+      <details>
+        <summary>集計ルール</summary>
+        <ul>
+          <li>「内訳から再計算」（標準）：合計ST ＝ ライン検査のST設定 ＋ 出荷検査のST設定、合計工数 ＝ ライン検査の実績（1〜3人目）＋ 出荷検査の実績（1〜3人目）。管理表の合計実績の数式と同じ計算です。「製造応援・ロス工数を合計工数に含める」にチェックを入れると、製造応援とロス工数の実績も足します。</li>
+          <li>列の位置は各シートの見出し（2・3行目）から自動で判定します。シートごとに列がずれていても読み込めます。非表示のシートは集計しません。#REF! などのエラー値は空欄として扱います。</li>
+          <li>「シートの合計列」：合計ST＝AD列、合計工数＝AE列（合計実績）の値をそのまま使います。空欄の行は内訳から計算します。</li>
+          <li>表の「合計工数の内訳」は常に内訳列の入力値です。</li>
+          <li>ST達成率 ＝ その月の合計ST ÷ その月の合計工数（各行の達成率の単純平均ではなく、工数で加重した値）</li>
+          <li>ファイル内のすべてのシート（ARCシートと同じ列配置のもの）を読み込み、それぞれの行の検査完了日（E列）が入力した年月の範囲に入るものを集計します。</li>
+          <li>機種はExcelのシート単位で扱います（シート名＝機種）。「機種（シート）」で1シートだけに絞り込めます。C列の機種名は絞り込みに使いません。</li>
+          <li>検査完了日が空欄（または日付として読めない）の行は集計から除外します。除外した行数は読み込み結果に表示します。</li>
+          <li>ST・実績がどちらも空の行は集計対象外です。</li>
+          <li>「全機種 年月別」は「機種（シート）」の選択に関係なく、読み込んだすべてのシートを機種ごと・年月ごとに集計します。「全機種レポートを印刷」でこの部分だけをA4横で印刷します（PDF保存も可）。</li>
+        </ul>
+      </details>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  let records = [];   // 読み込んだ全行
+  let source = 'calc';   // calc: 内訳列から再計算（標準）, sheet: AD/AE列の値を使う
+  let lastRows = [];
+  const stOf = (r) => source === 'sheet' && r.stSheet != null ? r.stSheet : r.stCalc;
+  let incExtra = false;  // 内訳から再計算するとき、製造応援・ロス工数を合計工数に含めるか（標準：含めない）
+  const calcAct = (r) => incExtra ? r.actCalc : r.lineAct + r.shipAct;
+  const actOf = (r) => source === 'sheet' && r.actSheet != null ? r.actSheet : calcAct(r);
+  const isMismatch = (r) => (r.stSheet != null && Math.abs(r.stSheet - r.stCalc) > 1e-6) || (r.actSheet != null && Math.abs(r.actSheet - calcAct(r)) > 1e-6);
+
+  const $ = (id) => document.getElementById(id);
+  const fmtH = (v) => v.toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const fmtP = (v) => (v == null || !isFinite(v)) ? '―' : (v * 100).toFixed(1) + '%';
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // ---- 値の変換 ----
+  function num(v) {
+    if (v == null || v === '') return 0;
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    const n = parseFloat(String(v).replace(/[,，\s]/g, ''));
+    return isFinite(n) ? n : 0;
+  }
+  function toYM(v) {
+    if (v == null || v === '') return null;
+    if (v instanceof Date && !isNaN(v)) return ym(v.getFullYear(), v.getMonth() + 1);
+    if (typeof v === 'number') {
+      if (v < 1 || v > 2958465) return null;
+      const d = XLSX.SSF.parse_date_code(v);
+      return d ? ym(d.y, d.m) : null;
+    }
+    const s = String(v).trim().normalize('NFKC');
+    let m = s.match(/^(\d{4})\s*[\/\-.年]\s*(\d{1,2})/);
+    if (m) return ym(+m[1], +m[2]);
+    m = s.match(/^(\d{4})(\d{2})$/);
+    if (m) return ym(+m[1], +m[2]);
+    return null;
+  }
+  function ym(y, m) { return (m >= 1 && m <= 12) ? `${y}-${String(m).padStart(2, '0')}` : null; }
+  function ymLabel(k) { if (k === '?') return '年月不明'; const [y, m] = k.split('-'); return `${y}年${+m}月`; }
+
+
+  // ---- 列の特定（見出しの文字から列を探す。シートごとに列位置が違っても読める） ----
+  // 2行目（大見出し）：生産年月／機種名／検査完了日／ライン検査…／出荷検査…／製造応援／ロス工数／合計ST／合計実績
+  // 3行目（小見出し）：ST設定／担当者／作業内容／実績(n人目)
+  function mapColumns(ws, hr, range) {
+    const txt = (r, c) => { const cell = ws[XLSX.utils.encode_cell({ r, c })]; return cell && cell.t !== 'e' && cell.v != null ? String(cell.v).replace(/\s+/g, '') : ''; };
+    const m = { st: { line: null, ship: null }, act: { line: [], ship: [], support: [], loss: [] } };
+    let grp = null;
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const top = txt(hr, c), sub = txt(hr + 1, c);
+      if (top) {
+        if (top === '生産年月') { m.prod = c; grp = null; }
+        else if (top.startsWith('機種名')) { m.model = c; grp = null; }
+        else if (top.startsWith('検査完了日')) { m.insp = c; grp = null; }
+        else if (top.startsWith('ライン検査')) grp = 'line';
+        else if (top.startsWith('出荷検査')) grp = 'ship';
+        else if (top.startsWith('製造応援')) grp = 'support';
+        else if (top.startsWith('ロス工数')) grp = 'loss';
+        else if (top === '合計ST') { m.totalST = c; grp = null; }
+        else if (top === '合計実績') { m.totalAct = c; grp = null; }
+        else if (!top.startsWith('実績')) grp = null;
+      }
+      if (!grp) continue;
+      if (sub === 'ST設定' && (grp === 'line' || grp === 'ship')) m.st[grp] = c;
+      else if (sub.startsWith('実績') || top.startsWith('実績')) m.act[grp].push(c);
+    }
+    const ok = m.insp != null && (m.st.line != null || m.st.ship != null) && (m.act.line.length + m.act.ship.length) > 0;
+    return ok ? m : null;
+  }
+
+  // ---- ブック解析 ----
+  function parseWorkbook(wb, fileName) {
+    const out = []; const notes = []; const hidden = [];
+    wb.SheetNames.forEach((name, si) => {
+      const ws = wb.Sheets[name];
+      if (!ws['!ref']) return;
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      // 「合計ST」見出しの行を探す
+      let headerRow = -1;
+      for (let r = range.s.r; r <= Math.min(range.e.r, 20) && headerRow < 0; r++) {
+        for (let c = range.s.c; c <= range.e.c; c++) {
+          const cell = ws[XLSX.utils.encode_cell({ r, c })];
+          if (cell && typeof cell.v === 'string' && cell.v.replace(/\s/g, '') === '合計ST') { headerRow = r; break; }
+        }
+      }
+      if (headerRow < 0) return;
+      // 非表示のシート（原紙・マスタなど）は集計しない
+      const meta = wb.Workbook && wb.Workbook.Sheets && wb.Workbook.Sheets[si];
+      if (meta && meta.Hidden) { hidden.push(name); return; }
+      const col = mapColumns(ws, headerRow, range);
+      if (!col) {
+        notes.push(`「${fileName}」の「${name}」シートは見出しを読み取れないため対象外にしました。`);
+        return;
+      }
+      // エラー値（#REF! など）は空欄として扱う
+      const get = (r, c) => { if (c == null) return null; const cell = ws[XLSX.utils.encode_cell({ r, c })]; return cell && cell.t !== 'e' ? cell.v : null; };
+      const sumOf = (r, cols) => cols.reduce((a, c) => a + num(get(r, c)), 0);
+      const optNum = (v) => (v == null || v === '' || (typeof v === 'string' && isNaN(parseFloat(v)))) ? null : num(v);
+      let n = 0, blank = 0;
+      for (let r = headerRow + 2; r <= range.e.r; r++) {
+        const lineST = num(get(r, col.st.line)), shipST = num(get(r, col.st.ship));
+        const lineAct = sumOf(r, col.act.line), shipAct = sumOf(r, col.act.ship);
+        const support = sumOf(r, col.act.support), loss = sumOf(r, col.act.loss);
+        const stCalc = lineST + shipST;
+        const actCalc = lineAct + shipAct + support + loss;
+        const stSheet = optNum(get(r, col.totalST)), actSheet = optNum(get(r, col.totalAct));
+        if (stCalc === 0 && actCalc === 0 && !stSheet && !actSheet) continue;
+        // 検査完了日が空欄（または日付として読めない）の行は集計から除外
+        const insp = toYM(get(r, col.insp));
+        if (!insp) { blank++; continue; }
+        const model = get(r, col.model);
+        out.push({
+          file: fileName, sheet: name, sheetKey: `${fileName}|${name}`,  /* ファイル名に | は使えないため区切りに使う */ row: r + 1,
+          prod: toYM(get(r, col.prod)), insp,
+          model: model == null || model === '' ? '(機種名なし)' : String(model).trim(),
+          stCalc, actCalc, stSheet, actSheet, lineAct, shipAct, support, loss
+        });
+        n++;
+      }
+      notes.push(`「${fileName}」/「${name}」シート：${n}行を読み込み` + (blank ? `（検査完了日が空欄の${blank}行は除外）` : ''));
+    });
+    if (hidden.length) notes.push(`「${fileName}」の非表示シート（${hidden.join('、')}）は集計対象外です。`);
+    return { rows: out, notes };
+  }
+
+  async function loadFiles(fileList) {
+    const msgs = []; const all = []; const infos = [];
+    for (const f of fileList) {
+      try {
+        const buf = await f.arrayBuffer();
+        const res = parseWorkbook(XLSX.read(buf, { type: 'array' }), f.name);
+        all.push(...res.rows); infos.push(...res.notes);
+        if (!res.rows.length && !res.notes.length) msgs.push({ t: 'err', s: `「${f.name}」に「合計ST」の見出しが見つかりませんでした。サンプルデータと同じ形式のファイルを選んでください。` });
+      } catch (e) {
+        msgs.push({ t: 'err', s: `「${f.name}」を読み込めませんでした（${esc(e.message || e)}）。` });
+      }
+    }
+    records = all;
+    $('files').innerHTML = infos.map((s) => `<div>${esc(s)}</div>`).join('');
+    showMsgs(msgs);
+    buildSheetFilter();
+    render();
+  }
+  // テスト・外部連携用
+  window.loadArrayBuffer = (buf, name = 'data.xlsx') => loadFiles([{ name, arrayBuffer: async () => buf }]);
+
+  function showMsgs(list) {
+    $('msgs').innerHTML = list.map((m) => `<div class="msg ${m.t}">${m.s}</div>`).join('');
+  }
+
+  function buildSheetFilter() {
+    const sel = $('sheet'); const prev = sel.value;
+    const keys = [...new Map(records.map((r) => [r.sheetKey, r])).values()];
+    const multiFile = new Set(keys.map((r) => r.file)).size > 1;
+    // 機種＝Excelのシート（ブック内のシート順に並べる）
+    sel.innerHTML = '<option value="">すべての機種</option>' +
+      keys.map((r) => `<option value="${esc(r.sheetKey)}">${esc(multiFile ? `${r.sheet}（${r.file}）` : r.sheet)}</option>`).join('');
+    if (keys.some((r) => r.sheetKey === prev)) sel.value = prev;
+  }
+  // 機種（シート）の絞り込み
+  function scope() {
+    const sheet = $('sheet').value;
+    return records.filter((r) => !sheet || r.sheetKey === sheet);
+  }
+
+  // ---- 集計 ----
+  // 入力された集計期間（検査完了日の年月）
+  function getRange() {
+    let from = $('from').value, to = $('to').value || from;
+    if (!from) return null;
+    if (to < from) [from, to] = [to, from];
+    const months = [];
+    let [y, m] = from.split('-').map(Number);
+    while (months.length < 120) {
+      const k = ym(y, m); months.push(k);
+      if (k >= to) break;
+      if (++m > 12) { m = 1; y++; }
+    }
+    return { from, to, months };
+  }
+  function rangeLabel(rg) {
+    if (rg.from === rg.to) return ymLabel(rg.from);
+    const sameYear = rg.from.slice(0, 4) === rg.to.slice(0, 4);
+    return `${ymLabel(rg.from)}〜${sameYear ? +rg.to.slice(5) + '月' : ymLabel(rg.to)}`;
+  }
+
+  // 指定した行を検査完了月ごとに集計（範囲内の全月を返す）
+  const SUM_KEYS = ['count', 'st', 'act', 'lineAct', 'shipAct', 'support', 'loss'];
+  const emptyG = (key) => ({ key, count: 0, st: 0, act: 0, lineAct: 0, shipAct: 0, support: 0, loss: 0 });
+  function aggRecords(recs, rg) {
+    const map = new Map(rg.months.map((k) => [k, emptyG(k)]));
+    for (const r of recs) {
+      const g = map.get(r.insp);
+      if (!g) continue;  // 検査完了日が範囲外
+      g.count++; g.st += stOf(r); g.act += actOf(r); g.lineAct += r.lineAct; g.shipAct += r.shipAct; g.support += r.support; g.loss += r.loss;
+    }
+    const rows = [...map.values()];
+    const tot = rows.reduce((a, g) => { SUM_KEYS.forEach((k) => { a[k] += g[k]; }); return a; }, emptyG('total'));
+    [...rows, tot].forEach((g) => { g.rate = g.act > 0 ? g.st / g.act : null; });
+    return { rows, tot };
+  }
+  function aggregate(rg) { return aggRecords(scope(), rg).rows; }
+
+  // 全機種（シート）×年月
+  function aggregateAll(rg) {
+    const sheets = [...new Map(records.map((r) => [r.sheetKey, r])).values()];
+    const multiFile = new Set(sheets.map((r) => r.file)).size > 1;
+    const series = sheets.map((s) => ({
+      key: s.sheetKey,
+      name: multiFile ? `${s.sheet}（${s.file}）` : s.sheet,
+      ...aggRecords(records.filter((r) => r.sheetKey === s.sheetKey), rg)
+    }));
+    return { series, all: aggRecords(records, rg) };
+  }
+
+  function render() {
+    const rg = getRange();
+    if (!records.length || !rg) { $('result').classList.add('hidden'); return; }
+    $('result').classList.remove('hidden');
+    const { rows, tot } = aggRecords(scope(), rg); lastRows = rows;
+
+    const scoped = scope();
+    const inRange = scoped.filter((r) => r.insp >= rg.from && r.insp <= rg.to);
+    const multiSheet = new Set(scoped.map((r) => r.sheetKey)).size > 1;
+    const where = (r) => (multiSheet ? `${r.sheet}シート ` : '') + `${r.row}行目`;
+    const warn = [];
+    if (!inRange.length) {
+      const ds = scoped.map((r) => r.insp).sort();
+      warn.push({ t: 'warn', s: `${rangeLabel(rg)}に検査完了日が入っている行はありません。` +
+        (ds.length ? `読み込んだシートの検査完了日は${ymLabel(ds[0])}〜${ymLabel(ds[ds.length - 1])}です。` : '') });
+    }
+    const mism = inRange.filter(isMismatch);
+    if (mism.length) {
+      const list = mism.slice(0, 15).map(where).join('、') + (mism.length > 15 ? ` ほか${mism.length - 15}行` : '');
+      warn.push({ t: 'warn', s: `${mism.length}行で、シートの「合計ST（AD列）／合計実績（AE列）」の値が内訳列の合計と一致しません（${esc(list)}）。` +
+        `現在は<strong>${source === 'sheet' ? 'シートの合計列の値' : '内訳列から再計算した値'}</strong>で集計しています。上の「工数の算出」で切り替えられます。` });
+    }
+    const errs = [...document.querySelectorAll('#msgs .msg.err')].map((e) => ({ t: 'err', s: e.innerHTML }));
+    showMsgs([...errs, ...warn]);
+
+    $('kpis').innerHTML = [
+      [`集計期間（${rangeLabel(rg)}）`, rows.length, 'か月'],
+      ['対象台数', tot.count, '台'],
+      ['合計工数（実績）', fmtH(tot.act), 'h'],
+      ['合計ST', fmtH(tot.st), 'h'],
+      ['ST達成率（期間全体）', tot.rate == null ? '―' : (tot.rate * 100).toFixed(1), tot.rate == null ? '' : '%']
+    ].map(([k, v, u]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}<span class="u">${u}</span></div></div>`).join('');
+
+    renderTable(rows, tot);
+    renderBarChart(rows);
+    renderRateChart(rows);
+    renderAll(rg);
+  }
+
+  // ---- 全機種 年月別レポート（グラフ1枚＋集計表1つで1ページに収める） ----
+  function renderAll(rg) {
+    const { series, all } = aggregateAll(rg);
+    const today = new Date();
+    $('allMeta').textContent = `集計期間：${rangeLabel(rg)}（検査完了日）　対象：${series.length}機種・${all.tot.count}台　` +
+      `工数の算出：${source === 'sheet' ? 'シートの合計列' : '内訳から再計算（' + (incExtra ? '製造応援・ロス工数を含む' : 'ライン検査＋出荷検査のみ') + '）'}　作成日：${today.getFullYear()}/${today.getMonth() + 1}/${today.getDate()}`;
+
+    // グラフ：横軸＝機種、各機種に「ST」「実績」の棒、縦軸＝工数(h)（集計期間の合計）
+    const title = rg.months.length > 1 ? `期間合計（${rangeLabel(rg)}）` : ymLabel(rg.from);
+    $('allCharts').innerHTML = `
+      <div class="card wide">
+        <p class="ctitle">機種別 STと実績　${esc(title)}</p>
+        <p class="cnote">単位：時間（h）　棒の上の％＝ST達成率　全機種：ST ${fmtH(all.tot.st)} h ／ 実績 ${fmtH(all.tot.act)} h（${fmtP(all.tot.rate)}）</p>
+        <div class="legend"><span><i style="background:var(--series-2)"></i>ST</span><span><i style="background:var(--series-1)"></i>実績（合計工数）</span></div>
+        <div id="pc0"></div>
+        <div class="tip" id="pt0"></div>
+      </div>`;
+    const items = series.map((s) => ({ name: s.name, ...s.tot }));
+    const raw = Math.max(0, ...items.map((g) => Math.max(g.st, g.act)));
+    pairChart($('pc0'), $('pt0'), items, niceMax(raw * 1.12), title, Math.max(1000, items.length * 76));
+
+    // 集計表：行＝機種、列＝各月（ST・実績・達成率）＋期間合計（台数・ST・実績・差異・達成率）
+    const multi = rg.months.length > 1;
+    // 機種や月が多いときは、印刷で1ページに収まるよう文字を小さくする
+    $('allReport').classList.toggle('dense', series.length > 15 || rg.months.length > 3);
+    // 月が多いときは1ページの横幅に収まるよう、月ごとの列を減らす（4か月まで：ST・実績・達成率／8か月まで：実績・達成率／それ以上：達成率）
+    const nm = rg.months.length;
+    const mcols = nm <= 4 ? ['st', 'act', 'rate'] : nm <= 8 ? ['act', 'rate'] : ['rate'];
+    const mlabel = { st: 'ST', act: '実績', rate: '達成率' };
+    const mval = (g, c) => (c === 'rate' ? fmtP(g.rate) : fmtH(g[c]));
+    const monthCells = (s) => multi ? s.rows.map((g) => mcols.map((c, j) =>
+      `<td class="${j === 0 ? 'gs' : ''}${g.count ? '' : ' muted'}">${g.count ? mval(g, c) : '―'}</td>`).join('')).join('') : '';
+    const totCells = (g) => `<td class="gs">${g.count}</td><td>${fmtH(g.st)}</td><td>${fmtH(g.act)}</td>` +
+      `<td>${(g.act - g.st >= 0 ? '+' : '') + fmtH(g.act - g.st)}</td><td class="rate-hi">${fmtP(g.rate)}</td>`;
+    const row = (name, s, tag = 'td') => `<tr><${tag}>${esc(name)}</${tag}>${monthCells(s)}${totCells(s.tot)}</tr>`;
+    $('allTables').innerHTML = `
+      <p class="ctitle">機種別 集計表</p>
+      <div class="tablewrap"><table class="alltbl">
+        <thead>
+          <tr><th rowspan="2">機種（シート）</th>
+            ${multi ? rg.months.map((k) => `<th colspan="${mcols.length}" class="grp gs">${nm > 8 ? shortLabel(k) : ymLabel(k)}</th>`).join('') : ''}
+            <th colspan="5" class="grp gs">${multi ? '期間合計' : ymLabel(rg.from)}</th></tr>
+          <tr>${multi ? rg.months.map(() => mcols.map((c, j) => `<th${j === 0 ? ' class="gs"' : ''}>${mlabel[c]}</th>`).join('')).join('') : ''}
+            <th class="gs">台数</th><th>ST (h)</th><th>実績 (h)</th><th>差異<br>実績−ST</th><th>ST達成率</th></tr>
+        </thead>
+        <tbody>${series.map((s) => row(s.name, s)).join('')}</tbody>
+        <tfoot>${row('全機種', all)}</tfoot>
+      </table></div>
+      ${multi ? `<p class="cnote tnote">月ごとの${mcols.includes('act') ? ' ST・実績の単位は時間（h）。' : '列はST達成率です。'}「―」はその月に対象の行がないことを表します。${nm > 4 ? '月が多いため、月ごとの列を省略しています（期間合計は全項目）。' : ''}</p>` : ''}`;
+  }
+
+  // 文字幅の目安（全角 11px・半角 6.5px）で、入りきらない機種名を「…」で省略
+  function clipText(t, maxW) {
+    let w = 0, out = '';
+    for (const ch of t) {
+      const cw = /[\u0000-ÿ｡-ﾟ]/.test(ch) ? 6.5 : 11;
+      if (w + cw > maxW - 8) return out + '…';
+      w += cw; out += ch;
+    }
+    return out;
+  }
+
+  function pairChart(el, tipEl, items, max, title, Wc = W) {
+    const iw = Wc - M.l - M.r, ih = H - M.t - M.b;
+    const band = iw / Math.max(items.length, 1);
+    const bw = Math.max(4, Math.min(30, (band * 0.7 - 2) / 2));
+    const y = (v) => M.t + ih - (v / max) * ih;
+    const clip = (t) => clipText(t, band);
+    let s = axes(max, (v) => +v.toFixed(1), 4, Wc);
+    const tips = [];
+    items.forEach((g, i) => {
+      const cx = M.l + band * i + band / 2;
+      s += `<path d="${barPath(cx - bw - 1, y(g.st), bw, M.t + ih - y(g.st))}" fill="var(--series-2)"/>`;
+      s += `<path d="${barPath(cx + 1, y(g.act), bw, M.t + ih - y(g.act))}" fill="var(--series-1)"/>`;
+      if (g.rate != null) s += `<text class="val" x="${cx}" y="${y(Math.max(g.st, g.act)) - 5}" text-anchor="middle">${(g.rate * 100).toFixed(1)}%</text>`;
+      s += `<text x="${cx}" y="${H - 10}" text-anchor="middle">${esc(clip(g.name))}</text>`;
+      s += `<rect data-i="${i}" x="${M.l + band * i}" y="${M.t}" width="${band}" height="${ih}" fill="transparent"/>`;
+      tips.push(`<b>${esc(g.name)}（${esc(title)}）</b>ST：${fmtH(g.st)} h<br>実績：${fmtH(g.act)} h<br>ST達成率：${fmtP(g.rate)}<br>台数：${g.count}台`);
+    });
+    s += `<line x1="${M.l}" x2="${M.l + iw}" y1="${M.t + ih}" y2="${M.t + ih}" stroke="var(--text-muted)" stroke-width="1"/>`;
+    el.innerHTML = `<svg viewBox="0 0 ${Wc} ${H}" width="100%" role="img" aria-label="${esc(title)} 機種別のSTと実績">${s}</svg>`;
+    attachTip(el, tipEl, tips);
+  }
+
+  function renderTable(rows, tot) {
+    const tr = (g, label, tag = 'td') => `<tr>
+      <${tag}>${label}</${tag}>
+      <td>${g.count}</td>
+      <td>${fmtH(g.st)}</td>
+      <td>${fmtH(g.act)}</td>
+      <td class="muted">${fmtH(g.lineAct)}</td>
+      <td class="muted">${fmtH(g.shipAct)}</td>
+      <td class="muted">${fmtH(g.support)}</td>
+      <td class="muted">${fmtH(g.loss)}</td>
+      <td>${(g.act - g.st >= 0 ? '+' : '') + fmtH(g.act - g.st)}</td>
+      <td class="rate-hi">${fmtP(g.rate)}</td></tr>`;
+    $('tbl').innerHTML = `
+      <thead>
+        <tr><th rowspan="2">年月</th><th rowspan="2">台数</th><th rowspan="2">合計ST (h)</th><th rowspan="2">合計工数 (h)</th>
+            <th colspan="4" class="grp">合計工数の内訳 (h)</th><th rowspan="2">差異<br>工数−ST</th><th rowspan="2">ST達成率</th></tr>
+        <tr><th>ライン検査</th><th>出荷検査</th><th>製造応援</th><th>ロス</th></tr>
+      </thead>
+      <tbody>${rows.map((g) => tr(g, ymLabel(g.key))).join('')}</tbody>
+      <tfoot>${tr(tot, '合計')}</tfoot>`;
+  }
+
+  // ---- グラフ（SVG） ----
+  const W = 520, H = 260, M = { t: 18, r: 12, b: 30, l: 44 };
+  function niceMax(v) {
+    if (v <= 0) return 1;
+    const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p;
+    const step = [1, 1.2, 1.6, 2, 2.4, 3, 4, 5, 6, 8, 10].find((s) => n <= s + 1e-9);
+    return step * p;
+  }
+  function ticks(max, n = 4) { return Array.from({ length: n + 1 }, (_, i) => max * i / n); }
+  function shortLabel(k) { if (k === '?') return '不明'; const [y, m] = k.split('-'); return `${y.slice(2)}/${+m}`; }
+  // 上端だけ角丸の棒（ベースラインに接地）
+  function barPath(x, y, w, h, r = 4) {
+    if (h <= 0) return '';
+    r = Math.min(r, w / 2, h);
+    return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+  }
+  function attachTip(container, tipEl, items) {
+    const svg = container.querySelector('svg');
+    container.querySelectorAll('[data-i]').forEach((el) => {
+      el.addEventListener('mousemove', (e) => {
+        const it = items[+el.dataset.i]; tipEl.innerHTML = it; tipEl.style.display = 'block';
+        const card = container.parentElement.getBoundingClientRect();
+        let x = e.clientX - card.left + 12, y = e.clientY - card.top + 12;
+        if (x + tipEl.offsetWidth > card.width - 4) x = e.clientX - card.left - tipEl.offsetWidth - 12;
+        tipEl.style.left = x + 'px'; tipEl.style.top = y + 'px';
+      });
+      el.addEventListener('mouseleave', () => { tipEl.style.display = 'none'; });
+    });
+    svg.addEventListener('mouseleave', () => { tipEl.style.display = 'none'; });
+  }
+
+  function axes(max, fmt, n = 4, Wc = W) {
+    const iw = Wc - M.l - M.r, ih = H - M.t - M.b;
+    return ticks(max, n).map((v) => {
+      const y = M.t + ih - (v / max) * ih;
+      return `<line x1="${M.l}" x2="${M.l + iw}" y1="${y}" y2="${y}" stroke="var(--grid)" stroke-width="1"/>
+              <text x="${M.l - 6}" y="${y + 4}" text-anchor="end">${fmt(v)}</text>`;
+    }).join('');
+  }
+
+  function renderBarChart(rows) {
+    const iw = W - M.l - M.r, ih = H - M.t - M.b;
+    const max = niceMax(Math.max(...rows.map((g) => Math.max(g.act, g.st)), 0) * 1.05);
+    const band = iw / Math.max(rows.length, 1);
+    const bw = Math.max(4, Math.min(28, (band * 0.7 - 2) / 2));
+    const y = (v) => M.t + ih - (v / max) * ih;
+    let s = axes(max, (v) => +v.toFixed(1));
+    const tips = [];
+    rows.forEach((g, i) => {
+      const cx = M.l + band * i + band / 2;
+      const x1 = cx - bw - 1, x2 = cx + 1;
+      s += `<path d="${barPath(x1, y(g.act), bw, M.t + ih - y(g.act))}" fill="var(--series-1)"/>`;
+      s += `<path d="${barPath(x2, y(g.st), bw, M.t + ih - y(g.st))}" fill="var(--series-2)"/>`;
+      s += `<text x="${cx}" y="${H - 10}" text-anchor="middle">${shortLabel(g.key)}</text>`;
+      s += `<rect data-i="${i}" x="${M.l + band * i}" y="${M.t}" width="${band}" height="${ih}" fill="transparent"/>`;
+      tips.push(`<b>${ymLabel(g.key)}</b>合計工数：${fmtH(g.act)} h<br>合計ST：${fmtH(g.st)} h<br>台数：${g.count}台`);
+    });
+    s += `<line x1="${M.l}" x2="${M.l + iw}" y1="${M.t + ih}" y2="${M.t + ih}" stroke="var(--text-muted)" stroke-width="1"/>`;
+    $('chart1').innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="月別の合計工数とST">${s}</svg>`;
+    attachTip($('chart1'), $('tip1'), tips);
+  }
+
+  function renderRateChart(rows) {
+    const iw = W - M.l - M.r, ih = H - M.t - M.b;
+    const data = rows.filter((g) => g.rate != null);
+    const step = Math.max(...data.map((g) => g.rate), 0) > 2.5 ? 0.5 : 0.25;
+    const max = Math.max(1.25, Math.ceil(Math.max(...data.map((g) => g.rate), 0) * 1.1 / step) * step);
+    const band = iw / Math.max(rows.length, 1);
+    const bw = Math.max(6, Math.min(40, band * 0.55));
+    const y = (v) => M.t + ih - (v / max) * ih;
+    let s = axes(max, (v) => Math.round(v * 100) + '%', Math.round(max / step));
+    const tips = [];
+    rows.forEach((g, i) => {
+      const cx = M.l + band * i + band / 2;
+      if (g.rate != null) {
+        s += `<path d="${barPath(cx - bw / 2, y(g.rate), bw, M.t + ih - y(g.rate))}" fill="var(--series-1)"/>`;
+        s += `<text class="val" x="${cx}" y="${y(g.rate) - 5}" text-anchor="middle">${(g.rate * 100).toFixed(1)}%</text>`;
+      }
+      s += `<text x="${cx}" y="${H - 10}" text-anchor="middle">${shortLabel(g.key)}</text>`;
+      s += `<rect data-i="${i}" x="${M.l + band * i}" y="${M.t}" width="${band}" height="${ih}" fill="transparent"/>`;
+      tips.push(`<b>${ymLabel(g.key)}</b>ST達成率：${fmtP(g.rate)}<br>合計ST ${fmtH(g.st)} h ÷ 合計工数 ${fmtH(g.act)} h`);
+    });
+    s += `<line x1="${M.l}" x2="${M.l + iw}" y1="${y(1)}" y2="${y(1)}" stroke="var(--ref)" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+    s += `<line x1="${M.l}" x2="${M.l + iw}" y1="${M.t + ih}" y2="${M.t + ih}" stroke="var(--text-muted)" stroke-width="1"/>`;
+    $('chart2').innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="月別のST達成率">${s}</svg>`;
+    attachTip($('chart2'), $('tip2'), tips);
+  }
+
+  // ---- CSV 出力 ----
+  function downloadCSV() {
+    const head = ['年月', '台数', '合計ST(h)', '合計工数(h)', 'ライン検査実績(h)', '出荷検査実績(h)', '製造応援(h)', 'ロス工数(h)', '差異(工数-ST)', 'ST達成率(%)'];
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const lines = [head, ...lastRows.map((g) => [ymLabel(g.key), g.count, r2(g.st), r2(g.act), r2(g.lineAct), r2(g.shipAct), r2(g.support), r2(g.loss), r2(g.act - g.st), g.rate == null ? '' : (g.rate * 100).toFixed(1)])];
+    const csv = '﻿' + lines.map((l) => l.map((v) => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v).join(',')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const rg = getRange();
+    const sv = $('sheet').value;
+    const sheet = sv ? '_' + sv.slice(sv.indexOf('|') + 1) : '';
+    a.download = `年月別工数集計_検査完了${rg.from === rg.to ? rg.from : rg.from + '_' + rg.to}${sheet}.csv`.replace(/[\\/:*?"<>|]/g, '_');
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // ---- イベント ----
+  const drop = $('drop'), input = $('file');
+  const ready = () => !!getRange();
+  function updateDrop() {
+    const ok = ready();
+    drop.classList.toggle('disabled', !ok);
+    drop.setAttribute('aria-disabled', String(!ok));
+  }
+  function needRange() { showMsgs([{ t: 'warn', s: '先に「1」で集計したい年月（開始）を入力してください。' }]); $('from').focus(); }
+  const openPicker = () => (ready() ? input.click() : needRange());
+  drop.addEventListener('click', openPicker);
+  drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPicker(); } });
+  input.addEventListener('change', () => { if (input.files.length) loadFiles([...input.files]); input.value = ''; });
+  ['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); if (ready()) drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', (e) => {
+    if (!ready()) { needRange(); return; }
+    if (e.dataTransfer.files.length) loadFiles([...e.dataTransfer.files]);
+  });
+  // 範囲外にドロップしたときにブラウザがファイルを開いてしまうのを防ぐ
+  ['dragover', 'drop'].forEach((t) => window.addEventListener(t, (e) => e.preventDefault()));
+  ['from', 'to'].forEach((id) => $(id).addEventListener('change', () => {
+    updateDrop();
+    if (ready() && !records.length) showMsgs([]);
+    render();
+  }));
+  updateDrop();
+  function segment(id, set) {
+    $(id).addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      set(b.dataset.v);
+      $(id).querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      render();
+    });
+  }
+  segment('source', (v) => { source = v; $('incExtra').disabled = v === 'sheet'; });
+  $('incExtra').addEventListener('change', (e) => { incExtra = e.target.checked; render(); });
+  $('sheet').addEventListener('change', render);
+  $('csv').addEventListener('click', downloadCSV);
+  $('printAll').addEventListener('click', () => window.print());
+
+  if (typeof XLSX === 'undefined') {
+    showMsgs([{ t: 'err', s: 'Excel読み込み用ライブラリを取得できませんでした。インターネットに接続した状態で開き直してください。' }]);
+  }
+})();
+</script>
+</body>
+</html>
